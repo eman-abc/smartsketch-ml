@@ -1,0 +1,21 @@
+# SmartSketch.AI ML Package Requirements
+
+# Deep Learning
+torch==2.1.0
+torchvision==0.16.0
+
+# Diffusion Models
+diffusers==0.25.0
+transformers==4.36.2
+accelerate==0.25.0
+safetensors==0.4.1
+
+# CLIP
+git+https://github.com/openai/CLIP.git
+
+# Image Processing
+pillow==10.1.0
+opencv-python==4.8.1
+
+# Utilities
+numpy==1.24.3
