@@ -1,6 +1,6 @@
 """
-SmartSketch.AI - Sketch Converter Module
-Converts photorealistic faces to forensic sketches using ControlNet
+SmartSketch.AI - Memory-Efficient Sketch Converter
+Reuses existing SDXL pipeline to save GPU memory
 """
 
 import torch
@@ -12,55 +12,67 @@ from controlnet_aux import CannyDetector
 from diffusers import ControlNetModel, StableDiffusionXLControlNetPipeline
 
 
-class SketchConverter:
+class MemoryEfficientSketchConverter:
     """
-    Converts photorealistic faces to pencil sketches
-    
-    Uses ControlNet with Canny edge detection for high-quality conversion
+    Converts photos to sketches while reusing existing SDXL pipeline
     """
     
     def __init__(
         self,
+        base_pipeline=None,  # NEW: Reuse existing pipeline
         controlnet_model: str = "diffusers/controlnet-canny-sdxl-1.0",
-        base_model: str = "stabilityai/stable-diffusion-xl-base-1.0",
         device: str = "cuda"
     ):
         """
         Initialize sketch converter
         
         Args:
-            controlnet_model: ControlNet model for edge detection
-            base_model: Base SDXL model
+            base_pipeline: Existing SDXL pipeline to reuse (saves memory!)
+            controlnet_model: ControlNet model
             device: 'cuda' or 'cpu'
         """
-        print("🎨 Loading Sketch Converter...")
+        print("🎨 Loading Sketch Converter (memory-efficient)...")
         
         self.device = device
+        self.base_pipeline = base_pipeline
         
-        # Load Canny edge detector
+        # Load Canny detector (lightweight)
         print("  - Loading Canny detector...")
         self.canny_detector = CannyDetector()
         
-        # Load ControlNet
+        # Load ControlNet (small model)
         print("  - Loading ControlNet...")
         self.controlnet = ControlNetModel.from_pretrained(
             controlnet_model,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32
-        )
+        ).to(device)
         
-        # Load SDXL with ControlNet
-        print("  - Loading SDXL pipeline...")
-        self.pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-            base_model,
-            controlnet=self.controlnet,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            variant="fp16" if device == "cuda" else None
-        )
+        # Create pipeline with ControlNet
+        # This reuses the SDXL components from base_pipeline!
+        print("  - Creating ControlNet pipeline...")
+        if base_pipeline:
+            # MEMORY SAVER: Reuse existing SDXL components
+            self.pipe = StableDiffusionXLControlNetPipeline(
+                vae=base_pipeline.vae,
+                text_encoder=base_pipeline.text_encoder,
+                text_encoder_2=base_pipeline.text_encoder_2,
+                tokenizer=base_pipeline.tokenizer,
+                tokenizer_2=base_pipeline.tokenizer_2,
+                unet=base_pipeline.unet,
+                scheduler=base_pipeline.scheduler,
+                controlnet=self.controlnet
+            )
+        else:
+            # Fallback: Load new pipeline (uses more memory)
+            self.pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
+                "stabilityai/stable-diffusion-xl-base-1.0",
+                controlnet=self.controlnet,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            )
         
-        # Move to device
         self.pipe.to(device)
         
-        print("✅ Sketch Converter ready!")
+        print("✅ Sketch Converter ready (sharing SDXL components)!")
     
     def photo_to_sketch_simple(
         self,
@@ -68,45 +80,23 @@ class SketchConverter:
         style: Literal["light", "medium", "dark"] = "medium"
     ) -> Image.Image:
         """
-        Simple sketch conversion using OpenCV (fallback method)
-        
-        Args:
-            image: Input PIL Image
-            style: Sketch darkness ("light", "medium", "dark")
-        
-        Returns:
-            Sketch as PIL Image
+        Simple OpenCV sketch (CPU, fast, no GPU memory)
         """
-        # Convert to numpy array
         img_array = np.array(image)
         
-        # Convert to grayscale
         if len(img_array.shape) == 3:
             gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
         else:
             gray = img_array
         
-        # Invert the image
         inverted = 255 - gray
         
-        # Blur based on style
-        blur_sizes = {
-            "light": (11, 11),
-            "medium": (21, 21),
-            "dark": (31, 31)
-        }
+        blur_sizes = {"light": (11, 11), "medium": (21, 21), "dark": (31, 31)}
         blur_size = blur_sizes.get(style, (21, 21))
-        
-        # Apply Gaussian blur
         blurred = cv2.GaussianBlur(inverted, blur_size, 0)
         
-        # Invert blurred image
         inverted_blur = 255 - blurred
-        
-        # Create pencil sketch
         sketch = cv2.divide(gray, inverted_blur, scale=256.0)
-        
-        # Enhance contrast
         sketch = cv2.normalize(sketch, None, 0, 255, cv2.NORM_MINMAX)
         
         return Image.fromarray(sketch)
@@ -120,47 +110,27 @@ class SketchConverter:
         seed: Optional[int] = None
     ) -> Image.Image:
         """
-        High-quality sketch conversion using ControlNet
-        
-        Args:
-            image: Input PIL Image (photorealistic face)
-            style: Sketch style
-                - "pencil": Light pencil sketch
-                - "charcoal": Dark charcoal sketch  
-                - "forensic": Professional forensic sketch
-            detail_level: How much detail to preserve (0.0-1.0)
-            num_inference_steps: Quality (20-50, higher=better)
-            seed: Random seed for reproducibility
-        
-        Returns:
-            Sketch as PIL Image
+        High-quality ControlNet sketch
         """
-        
-        # Resize to standard size if needed
         if image.size != (512, 512):
             image = image.resize((512, 512), Image.Resampling.LANCZOS)
         
-        # Detect edges using Canny
         print("🔍 Detecting edges...")
         canny_image = self.canny_detector(image)
         
-        # Style-specific prompts
         style_prompts = {
-            "pencil": "pencil sketch, hand-drawn portrait, light shading, detailed lines, graphite drawing, sketch on paper",
-            "charcoal": "charcoal sketch, dark shading, dramatic portrait, heavy lines, artistic sketch, carbon drawing",
-            "forensic": "forensic sketch, police sketch, professional portrait drawing, detailed facial features, law enforcement sketch, witness description drawing"
+            "pencil": "pencil sketch, hand-drawn portrait, light shading, detailed lines, graphite drawing",
+            "charcoal": "charcoal sketch, dark shading, dramatic portrait, heavy lines",
+            "forensic": "forensic sketch, police sketch, professional portrait drawing, detailed facial features"
         }
         
         prompt = style_prompts.get(style, style_prompts["forensic"])
         
-        # Negative prompt to avoid unwanted styles
         negative_prompt = (
             "photo, photograph, photorealistic, realistic, color, colored, "
-            "painting, oil painting, watercolor, digital art, 3d render, "
-            "anime, cartoon, low quality, blurry, distorted"
+            "painting, anime, cartoon, low quality, blurry"
         )
         
-        # Set up generator for reproducibility
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
         else:
@@ -168,7 +138,6 @@ class SketchConverter:
         
         print(f"🎨 Converting to {style} sketch...")
         
-        # Generate sketch
         sketch = self.pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -180,7 +149,6 @@ class SketchConverter:
         ).images[0]
         
         print("✅ Sketch generated!")
-        
         return sketch
     
     def convert(
@@ -189,23 +157,11 @@ class SketchConverter:
         method: Literal["simple", "controlnet"] = "controlnet",
         **kwargs
     ) -> Image.Image:
-        """
-        Main conversion method
-        
-        Args:
-            image: Input PIL Image
-            method: "simple" (fast) or "controlnet" (high quality)
-            **kwargs: Additional arguments for chosen method
-        
-        Returns:
-            Sketch as PIL Image
-        """
+        """Main conversion method"""
         if method == "simple":
             return self.photo_to_sketch_simple(image, **kwargs)
-        elif method == "controlnet":
-            return self.photo_to_sketch_controlnet(image, **kwargs)
         else:
-            raise ValueError(f"Unknown method: {method}")
+            return self.photo_to_sketch_controlnet(image, **kwargs)
 
 
 # Convenience function
@@ -213,23 +169,11 @@ def convert_to_sketch(
     image: Image.Image,
     method: str = "controlnet",
     style: str = "forensic",
-    converter: Optional[SketchConverter] = None,
+    converter: Optional[MemoryEfficientSketchConverter] = None,
     **kwargs
 ) -> Image.Image:
-    """
-    Quick sketch conversion
-    
-    Args:
-        image: PIL Image to convert
-        method: "simple" or "controlnet"
-        style: Sketch style
-        converter: Optional pre-initialized converter
-        **kwargs: Additional arguments
-    
-    Returns:
-        Sketch as PIL Image
-    """
+    """Quick sketch conversion"""
     if converter is None:
-        converter = SketchConverter()
+        converter = MemoryEfficientSketchConverter()
     
     return converter.convert(image, method=method, style=style, **kwargs)

@@ -10,7 +10,7 @@ from PIL import Image
 from .validator import ForensicPromptValidator
 from .generator import FaceGenerator
 from .scorer import FaceScorer
-from .sketch_converter import SketchConverter  # NEW
+from .sketch_converter import MemoryEfficientSketchConverter, convert_to_sketch    # NEW
 
 
 class SmartSketchPipeline:

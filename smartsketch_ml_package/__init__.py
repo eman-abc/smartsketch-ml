@@ -9,14 +9,14 @@ __institution__ = "NUST SEECS"
 from .validator import ForensicPromptValidator, validate_prompt
 from .generator import FaceGenerator, generate_face
 from .scorer import FaceScorer, score_image
-from .sketch_converter import SketchConverter, convert_to_sketch  # NEW
+from .sketch_converter import MemoryEfficientSketchConverter, convert_to_sketch  # NEW
 from .pipeline import SmartSketchPipeline
 
 __all__ = [
     'ForensicPromptValidator',
     'FaceGenerator',
     'FaceScorer',
-    'SketchConverter',  # NEW
+    'MemoryEfficientSketchConverter',  # NEW
     'SmartSketchPipeline',
     'validate_prompt',
     'generate_face',
