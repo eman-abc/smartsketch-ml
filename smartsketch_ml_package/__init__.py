@@ -10,7 +10,7 @@ from .validator import ForensicPromptValidator, validate_prompt
 from .generator import FaceGenerator, generate_face
 from .scorer import FaceScorer, score_image
 from .sketch_converter import SketchConverter, convert_to_sketch  # NEW
-from .pipeline import SmartSketchPipeline, generate_forensic_sketch
+from .pipeline import SmartSketchPipeline
 
 __all__ = [
     'ForensicPromptValidator',
@@ -22,5 +22,5 @@ __all__ = [
     'generate_face',
     'score_image',
     'convert_to_sketch',  # NEW
-    'generate_forensic_sketch',
+    # 'generate_forensic_sketch',
 ]
