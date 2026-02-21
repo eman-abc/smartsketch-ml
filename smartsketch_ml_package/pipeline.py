@@ -23,8 +23,8 @@ class SmartSketchPipeline:
         validator: ForensicPromptValidator,
         generator: FaceGenerator,
         scorer: FaceScorer,
-        sketch_converter: Optional[SketchConverter] = None
-    ):
+        sketch_converter: Optional[MemoryEfficientSketchConverter] = None # <-- FIXED    
+        ):
         """
         Initialize pipeline
         
@@ -239,11 +239,14 @@ class SmartSketchPipeline:
         generator = FaceGenerator(sdxl_model, lora_path, lora_strength, device=device)
         scorer = FaceScorer(device=device)
         
-        # Optionally load sketch converter
         sketch_converter = None
         if enable_sketch:
             try:
-                sketch_converter = SketchConverter(device=device)
+                # FIXED: Use the correct class name AND pass the generator's pipeline to share memory!
+                sketch_converter = MemoryEfficientSketchConverter(
+                    base_pipeline=generator.pipe, 
+                    device=device
+                )
             except Exception as e:
                 print(f"⚠️  Could not load sketch converter: {e}")
                 print("   Pipeline will work for photos only")
