@@ -1,6 +1,6 @@
-"""
-SmartSketch.AI - Complete Pipeline (Updated with Sketch Support)
-"""
+# ============================================
+# CELL: Create Corrected pipeline.py
+# ============================================
 
 import random
 from datetime import datetime
@@ -10,12 +10,12 @@ from PIL import Image
 from .validator import ForensicPromptValidator
 from .generator import FaceGenerator
 from .scorer import FaceScorer
-from .sketch_converter import MemoryEfficientSketchConverter, convert_to_sketch    # NEW
+from .sketch_converter import MemoryEfficientSketchConverter
 
 
 class SmartSketchPipeline:
     """
-    Complete SmartSketch pipeline with sketch generation
+    Complete SmartSketch pipeline with sketch generation and face editing
     """
     
     def __init__(
@@ -23,8 +23,9 @@ class SmartSketchPipeline:
         validator: ForensicPromptValidator,
         generator: FaceGenerator,
         scorer: FaceScorer,
-        sketch_converter: Optional[MemoryEfficientSketchConverter] = None # <-- FIXED    
-        ):
+        sketch_converter: Optional[MemoryEfficientSketchConverter] = None,
+        face_editor: Optional["FaceEditor"] = None  # NEW
+    ):
         """
         Initialize pipeline
         
@@ -33,11 +34,13 @@ class SmartSketchPipeline:
             generator: FaceGenerator instance
             scorer: FaceScorer instance
             sketch_converter: SketchConverter instance (optional)
+            face_editor: FaceEditor instance (optional)
         """
         self.validator = validator
         self.generator = generator
         self.scorer = scorer
         self.sketch_converter = sketch_converter
+        self.face_editor = face_editor  # NEW
         
         print("=" * 60)
         print("🚀 SmartSketch Pipeline Initialized")
@@ -45,10 +48,17 @@ class SmartSketchPipeline:
         print("✅ LLM Validator: Ready")
         print("✅ Image Generator: Ready")
         print("✅ Scorer: Ready")
+        
+        if face_editor:
+            print("✅ Face Editor: Ready")
+        else:
+            print("⚠️  Face Editor: Not loaded")
+        
         if sketch_converter:
             print("✅ Sketch Converter: Ready")
         else:
             print("⚠️  Sketch Converter: Not loaded (photos only)")
+        
         print("=" * 60)
     
     def generate_sketch(
@@ -140,7 +150,7 @@ class SmartSketchPipeline:
                 }
             
             try:
-                print(f"\n🎨 Converting to {sketch_style} sketch...")
+                print(f"\\n🎨 Converting to {sketch_style} sketch...")
                 
                 sketch_image = self.sketch_converter.convert(
                     image=photo_image,
@@ -164,7 +174,7 @@ class SmartSketchPipeline:
                     "generation_id": generation_id,
                     "error": f"Sketch conversion failed: {str(e)}",
                     "timestamp": timestamp,
-                    "photo_image": photo_image  # Return photo as fallback
+                    "photo_image": photo_image
                 }
         
         # ============================================
@@ -172,7 +182,6 @@ class SmartSketchPipeline:
         # ============================================
         
         try:
-            # Score the photo (not sketch, for consistency)
             scores = self.scorer.score_generation(
                 image=photo_image,
                 prompt=enhanced_prompt
@@ -191,8 +200,8 @@ class SmartSketchPipeline:
         result = {
             "success": True,
             "generation_id": generation_id,
-            "image": final_image,  # Sketch or photo
-            "photo_image": photo_image,  # Always include photo
+            "image": final_image,
+            "photo_image": photo_image,
             "output_type": output_type,
             "scores": scores,
             "metadata": {
@@ -211,6 +220,122 @@ class SmartSketchPipeline:
         
         return result
     
+    def edit_sketch(
+        self,
+        generation_id: str,
+        original_image: Image.Image,
+        edit_prompt: str,
+        strength: Optional[float] = None,
+        seed: Optional[int] = None
+    ) -> Dict:
+        """
+        Edit an existing face
+        
+        Args:
+            generation_id: ID of original generation
+            original_image: Original face image (PIL Image)
+            edit_prompt: What to change (e.g., "add round glasses")
+            strength: How much to change (0.0-1.0, auto if None)
+            seed: Random seed for reproducibility
+        
+        Returns:
+            Dictionary with:
+            - success: bool
+            - edit_id: str
+            - original_image: PIL Image
+            - edited_image: PIL Image
+            - identity_score: float
+            - scores: dict (CLIP scores)
+            - metadata: dict
+        """
+        
+        if self.face_editor is None:
+            return {
+                'success': False,
+                'error': 'Face editor not initialized',
+                'generation_id': generation_id
+            }
+        
+        print(f"\\n{'='*70}")
+        print(f"🎯 SMARTSKETCH EDIT PIPELINE")
+        print(f"{'='*70}")
+        print(f"📋 Original Generation ID: {generation_id}")
+        print(f"📝 Edit Prompt: {edit_prompt}")
+        print(f"{'='*70}")
+        
+        # Step 1: Validate edit prompt
+        print("\\nSTEP 1: VALIDATING EDIT PROMPT")
+        print("-"*70)
+        
+        is_valid, enhanced_edit, validation_meta = self.validator.validate_and_enhance(
+            prompt=edit_prompt,
+            case_type="criminal",
+            age=25
+        )
+        
+        if not is_valid:
+            print(f"❌ Validation failed: {validation_meta['reason']}")
+            return {
+                'success': False,
+                'error': f"Invalid edit prompt: {validation_meta['reason']}",
+                'generation_id': generation_id
+            }
+        
+        print(f"✅ Edit prompt validated")
+        print(f"✨ Enhanced: {enhanced_edit[:80]}...")
+        
+        # Step 2: Edit face
+        print("\\nSTEP 2: EDITING FACE")
+        print("-"*70)
+        
+        result = self.face_editor.edit_face(
+            original_image=original_image,
+            edit_prompt=enhanced_edit,
+            strength=strength,
+            seed=seed
+        )
+        
+        if not result['success']:
+            print(f"❌ Edit failed: {result['error']}")
+            return result
+        
+        # Step 3: Score edited image
+        print("\\nSTEP 3: SCORING EDITED IMAGE")
+        print("-"*70)
+        
+        try:
+            scores = self.scorer.score_generation(
+                image=result['edited_image'],
+                prompt=enhanced_edit
+            )
+            
+            result['scores'] = scores
+            print(f"📊 Quality Score: {scores['combined_score']:.1f}/100")
+            print(f"💬 {scores['interpretation']}")
+            
+        except Exception as e:
+            print(f"⚠️  Scoring failed: {e}")
+            result['scores'] = {
+                'clip_score': 0.0,
+                'combined_score': 0.0,
+                'interpretation': f"Scoring failed: {str(e)}"
+            }
+        
+        # Add original generation reference
+        result['original_generation_id'] = generation_id
+        result['metadata']['original_generation_id'] = generation_id
+        result['metadata']['validation'] = validation_meta
+        
+        print("\\n" + "="*70)
+        print("✅ EDIT PIPELINE COMPLETED SUCCESSFULLY")
+        print("="*70)
+        print(f"🆔 Edit ID: {result['edit_id']}")
+        print(f"👤 Identity Score: {result['identity_score']:.1%}")
+        print(f"📊 Quality Score: {result['scores']['combined_score']:.1f}/100")
+        print(f"{'='*70}\\n")
+        
+        return result
+    
     @classmethod
     def from_pretrained(
         cls,
@@ -219,7 +344,8 @@ class SmartSketchPipeline:
         sdxl_model: str = "stabilityai/stable-diffusion-xl-base-1.0",
         lora_strength: float = 0.3,
         device: str = "cuda",
-        enable_sketch: bool = True
+        enable_sketch: bool = True,
+        enable_editing: bool = True  # NEW
     ):
         """
         Initialize complete pipeline
@@ -231,6 +357,7 @@ class SmartSketchPipeline:
             lora_strength: LoRA strength
             device: 'cuda' or 'cpu'
             enable_sketch: Load sketch converter
+            enable_editing: Load face editor
         
         Returns:
             SmartSketchPipeline instance
@@ -239,16 +366,64 @@ class SmartSketchPipeline:
         generator = FaceGenerator(sdxl_model, lora_path, lora_strength, device=device)
         scorer = FaceScorer(device=device)
         
+        # Load sketch converter
         sketch_converter = None
         if enable_sketch:
             try:
-                # FIXED: Use the correct class name AND pass the generator's pipeline to share memory!
                 sketch_converter = MemoryEfficientSketchConverter(
-                    base_pipeline=generator.pipe, 
+                    base_pipeline=generator.pipe,
                     device=device
                 )
             except Exception as e:
                 print(f"⚠️  Could not load sketch converter: {e}")
                 print("   Pipeline will work for photos only")
         
-        return cls(validator, generator, scorer, sketch_converter)
+        # Load face editor
+        face_editor = None
+        if enable_editing:
+            try:
+                from .editor import FaceEditor
+                face_editor = FaceEditor(
+                    base_pipeline=generator.pipe,
+                    device=device
+                )
+            except Exception as e:
+                print(f"⚠️  Could not load face editor: {e}")
+                print("   Editing will not be available")
+        
+        return cls(validator, generator, scorer, sketch_converter, face_editor)
+
+
+# Convenience function
+def generate_forensic_sketch(
+    prompt: str,
+    case_type: str = "criminal",
+    age: Optional[int] = None,
+    seed: Optional[int] = None,
+    pipeline: Optional[SmartSketchPipeline] = None,
+    **kwargs
+) -> Dict:
+    """
+    Quick generation function
+    
+    Args:
+        prompt: Text description
+        case_type: "criminal" or "missing"
+        age: Person's age
+        seed: Random seed for reproducibility
+        pipeline: Optional pre-initialized pipeline (for performance)
+        **kwargs: Additional generation parameters
+    
+    Returns:
+        Result dictionary
+    """
+    if pipeline is None:
+        pipeline = SmartSketchPipeline.from_pretrained()
+    
+    return pipeline.generate_sketch(
+        prompt=prompt,
+        case_type=case_type,
+        age=age,
+        seed=seed,
+        **kwargs
+    )

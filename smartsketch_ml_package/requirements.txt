@@ -1,5 +1,6 @@
-# Update requirements if needed
-# SmartSketch.AI ML Package Requirements
+# ============================================
+# CELL 5: Update requirements.txt
+# ============================================
 
 # Deep Learning
 torch==2.1.0
@@ -17,6 +18,9 @@ git+https://github.com/openai/CLIP.git
 # ControlNet & Sketch Generation
 controlnet-aux>=0.0.6
 opencv-python>=4.8.1
+
+# Face Editing & Identity Scoring
+scikit-image>=0.21.0
 
 # Image Processing
 pillow==10.1.0
