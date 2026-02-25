@@ -67,8 +67,8 @@ class FaceGenerator:
         seed: Optional[int] = None,
         num_inference_steps: int = 30,
         guidance_scale: float = 7.5,
-        width: int = 512,
-        height: int = 512
+        width: int = 1024,
+        height: int = 1024
     ) -> Image.Image:
         """
         Generate a face from text description
